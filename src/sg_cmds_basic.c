@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999-2006 Douglas Gilbert.
+ * Copyright (c) 1999-2007 Douglas Gilbert.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -40,14 +40,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <errno.h>
-#include <sys/ioctl.h>
 #include "sg_lib.h"
 #include "sg_cmds_basic.h"
 #include "sg_pt.h"
 
 
-static char * version_str = "1.35 20061012";
+static char * version_str = "1.40 20070331";
 
 
 #define SENSE_BUFF_LEN 32       /* Arbitrary, could be larger */
@@ -122,7 +120,7 @@ int sg_cmds_close_device(int device_fd)
    output via 'o_sense_cat' pointer (if not NULL). Outputs to
    sg_warnings_strm (def: stderr) if problems; depending on 'noisy'
    and 'verbose' */
-int sg_cmds_process_resp(void * ptvp, const char * leadin, int res,
+int sg_cmds_process_resp(struct sg_pt_base * ptvp, const char * leadin, int res,
                          int mx_resp_len, const unsigned char * sense_b,
                          int noisy, int verbose, int * o_sense_cat)
 {
@@ -225,7 +223,7 @@ int sg_ll_inquiry(int sg_fd, int cmddt, int evpd, int pg_op,
     unsigned char inqCmdBlk[INQUIRY_CMDLEN] = {INQUIRY_CMD, 0, 0, 0, 0, 0};
     unsigned char sense_b[SENSE_BUFF_LEN];
     unsigned char * up;
-    void * ptvp;
+    struct sg_pt_base * ptvp;
 
     if (cmddt)
         inqCmdBlk[1] |= 2;
@@ -244,7 +242,7 @@ int sg_ll_inquiry(int sg_fd, int cmddt, int evpd, int pg_op,
         fprintf(sg_warnings_strm, "\n");
     }
     if (resp && (mx_resp_len > 0)) {
-        up = resp;
+        up = (unsigned char *)resp;
         up[0] = 0x7f;   /* defensive prefill */
         if (mx_resp_len > 4)
             up[4] = 0;
@@ -256,7 +254,7 @@ int sg_ll_inquiry(int sg_fd, int cmddt, int evpd, int pg_op,
     }
     set_scsi_pt_cdb(ptvp, inqCmdBlk, sizeof(inqCmdBlk));
     set_scsi_pt_sense(ptvp, sense_b, sizeof(sense_b));
-    set_scsi_pt_data_in(ptvp, resp, mx_resp_len);
+    set_scsi_pt_data_in(ptvp, (unsigned char *)resp, mx_resp_len);
     res = do_scsi_pt(ptvp, sg_fd, DEF_PT_TIMEOUT, verbose);
     ret = sg_cmds_process_resp(ptvp, "inquiry", res, mx_resp_len, sense_b,
                                noisy, verbose, &sense_cat);
@@ -300,7 +298,7 @@ int sg_simple_inquiry(int sg_fd, struct sg_simple_inquiry_resp * inq_data,
     unsigned char inqCmdBlk[INQUIRY_CMDLEN] = {INQUIRY_CMD, 0, 0, 0, 0, 0};
     unsigned char sense_b[SENSE_BUFF_LEN];
     unsigned char inq_resp[INQUIRY_RESP_INITIAL_LEN];
-    void * ptvp;
+    struct sg_pt_base * ptvp;
 
     if (inq_data) {
         memset(inq_data, 0, sizeof(* inq_data));
@@ -384,7 +382,7 @@ int sg_ll_test_unit_ready_progress(int sg_fd, int pack_id, int * progress,
     int res, ret, k, sense_cat;
     unsigned char turCmdBlk[TUR_CMDLEN] = {TUR_CMD, 0, 0, 0, 0, 0};
     unsigned char sense_b[SENSE_BUFF_LEN];
-    void * ptvp;
+    struct sg_pt_base * ptvp;
 
     if (NULL == sg_warnings_strm)
         sg_warnings_strm = stderr;
@@ -462,7 +460,7 @@ int sg_ll_sync_cache_10(int sg_fd, int sync_nv, int immed, int group,
     unsigned char scCmdBlk[SYNCHRONIZE_CACHE_CMDLEN] =
                 {SYNCHRONIZE_CACHE_CMD, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     unsigned char sense_b[SENSE_BUFF_LEN];
-    void * ptvp;
+    struct sg_pt_base * ptvp;
 
     if (sync_nv)
         scCmdBlk[1] |= 4;
@@ -537,7 +535,7 @@ int sg_ll_readcap_16(int sg_fd, int pmi, unsigned long long llba,
                         {SERVICE_ACTION_IN_16_CMD, READ_CAPACITY_16_SA, 
                          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     unsigned char sense_b[SENSE_BUFF_LEN];
-    void * ptvp;
+    struct sg_pt_base * ptvp;
 
     if (pmi) { /* lbs only valid when pmi set */
         rcCmdBlk[14] |= 1;
@@ -570,7 +568,7 @@ int sg_ll_readcap_16(int sg_fd, int pmi, unsigned long long llba,
     }
     set_scsi_pt_cdb(ptvp, rcCmdBlk, sizeof(rcCmdBlk));
     set_scsi_pt_sense(ptvp, sense_b, sizeof(sense_b));
-    set_scsi_pt_data_in(ptvp, resp, mx_resp_len);
+    set_scsi_pt_data_in(ptvp, (unsigned char *)resp, mx_resp_len);
     res = do_scsi_pt(ptvp, sg_fd, DEF_PT_TIMEOUT, verbose);
     ret = sg_cmds_process_resp(ptvp, "read capacity (16)", res, mx_resp_len,
                                sense_b, noisy, verbose, &sense_cat);
@@ -612,7 +610,7 @@ int sg_ll_readcap_10(int sg_fd, int pmi, unsigned int lba,
     unsigned char rcCmdBlk[READ_CAPACITY_10_CMDLEN] =
                          {READ_CAPACITY_10_CMD, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     unsigned char sense_b[SENSE_BUFF_LEN];
-    void * ptvp;
+    struct sg_pt_base * ptvp;
 
     if (pmi) { /* lbs only valid when pmi set */
         rcCmdBlk[8] |= 1;
@@ -636,7 +634,7 @@ int sg_ll_readcap_10(int sg_fd, int pmi, unsigned int lba,
     }
     set_scsi_pt_cdb(ptvp, rcCmdBlk, sizeof(rcCmdBlk));
     set_scsi_pt_sense(ptvp, sense_b, sizeof(sense_b));
-    set_scsi_pt_data_in(ptvp, resp, mx_resp_len);
+    set_scsi_pt_data_in(ptvp, (unsigned char *)resp, mx_resp_len);
     res = do_scsi_pt(ptvp, sg_fd, DEF_PT_TIMEOUT, verbose);
     ret = sg_cmds_process_resp(ptvp, "read capacity (10)", res, mx_resp_len,
                                sense_b, noisy, verbose, &sense_cat);
@@ -678,7 +676,7 @@ int sg_ll_mode_sense6(int sg_fd, int dbd, int pc, int pg_code, int sub_pg_code,
     unsigned char modesCmdBlk[MODE_SENSE6_CMDLEN] = 
         {MODE_SENSE6_CMD, 0, 0, 0, 0, 0};
     unsigned char sense_b[SENSE_BUFF_LEN];
-    void * ptvp;
+    struct sg_pt_base * ptvp;
 
     modesCmdBlk[1] = (unsigned char)(dbd ? 0x8 : 0);
     modesCmdBlk[2] = (unsigned char)(((pc << 6) & 0xc0) | (pg_code & 0x3f));
@@ -703,7 +701,7 @@ int sg_ll_mode_sense6(int sg_fd, int dbd, int pc, int pg_code, int sub_pg_code,
     }
     set_scsi_pt_cdb(ptvp, modesCmdBlk, sizeof(modesCmdBlk));
     set_scsi_pt_sense(ptvp, sense_b, sizeof(sense_b));
-    set_scsi_pt_data_in(ptvp, resp, mx_resp_len);
+    set_scsi_pt_data_in(ptvp, (unsigned char *)resp, mx_resp_len);
     res = do_scsi_pt(ptvp, sg_fd, DEF_PT_TIMEOUT, verbose);
     ret = sg_cmds_process_resp(ptvp, "mode sense (6)", res, mx_resp_len,
                                sense_b, noisy, verbose, &sense_cat);
@@ -730,7 +728,7 @@ int sg_ll_mode_sense6(int sg_fd, int dbd, int pc, int pg_code, int sub_pg_code,
         if ((verbose > 2) && (ret > 0)) {
             fprintf(sg_warnings_strm, "    mode sense (6): response%s\n",
                     (ret > 256 ? ", first 256 bytes" : ""));
-            dStrHex(resp, (ret > 256 ? 256 : ret), -1);
+            dStrHex((const char *)resp, (ret > 256 ? 256 : ret), -1);
         }
         ret = 0;
     }
@@ -751,7 +749,7 @@ int sg_ll_mode_sense10(int sg_fd, int llbaa, int dbd, int pc, int pg_code,
     unsigned char modesCmdBlk[MODE_SENSE10_CMDLEN] = 
         {MODE_SENSE10_CMD, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     unsigned char sense_b[SENSE_BUFF_LEN];
-    void * ptvp;
+    struct sg_pt_base * ptvp;
 
     modesCmdBlk[1] = (unsigned char)((dbd ? 0x8 : 0) | (llbaa ? 0x10 : 0));
     modesCmdBlk[2] = (unsigned char)(((pc << 6) & 0xc0) | (pg_code & 0x3f));
@@ -777,7 +775,7 @@ int sg_ll_mode_sense10(int sg_fd, int llbaa, int dbd, int pc, int pg_code,
     }
     set_scsi_pt_cdb(ptvp, modesCmdBlk, sizeof(modesCmdBlk));
     set_scsi_pt_sense(ptvp, sense_b, sizeof(sense_b));
-    set_scsi_pt_data_in(ptvp, resp, mx_resp_len);
+    set_scsi_pt_data_in(ptvp, (unsigned char *)resp, mx_resp_len);
     res = do_scsi_pt(ptvp, sg_fd, DEF_PT_TIMEOUT, verbose);
     ret = sg_cmds_process_resp(ptvp, "mode sense (10)", res, mx_resp_len,
                                sense_b, noisy, verbose, &sense_cat);
@@ -804,7 +802,7 @@ int sg_ll_mode_sense10(int sg_fd, int llbaa, int dbd, int pc, int pg_code,
         if ((verbose > 2) && (ret > 0)) {
             fprintf(sg_warnings_strm, "    mode sense (10): response%s\n",
                     (ret > 256 ? ", first 256 bytes" : ""));
-            dStrHex(resp, (ret > 256 ? 256 : ret), -1);
+            dStrHex((const char *)resp, (ret > 256 ? 256 : ret), -1);
         }
         ret = 0;
     }
@@ -824,7 +822,7 @@ int sg_ll_mode_select6(int sg_fd, int pf, int sp, void * paramp,
     unsigned char modesCmdBlk[MODE_SELECT6_CMDLEN] = 
         {MODE_SELECT6_CMD, 0, 0, 0, 0, 0};
     unsigned char sense_b[SENSE_BUFF_LEN];
-    void * ptvp;
+    struct sg_pt_base * ptvp;
 
     modesCmdBlk[1] = (unsigned char)(((pf << 4) & 0x10) | (sp & 0x1));
     modesCmdBlk[4] = (unsigned char)(param_len & 0xff);
@@ -841,7 +839,7 @@ int sg_ll_mode_select6(int sg_fd, int pf, int sp, void * paramp,
         fprintf(sg_warnings_strm, "\n");
     }
     if (verbose > 1) {
-        fprintf(sg_warnings_strm, "    mode select (6) parameter block\n");
+        fprintf(sg_warnings_strm, "    mode select (6) parameter list\n");
         dStrHex((const char *)paramp, param_len, -1);
     }
 
@@ -852,7 +850,7 @@ int sg_ll_mode_select6(int sg_fd, int pf, int sp, void * paramp,
     }
     set_scsi_pt_cdb(ptvp, modesCmdBlk, sizeof(modesCmdBlk));
     set_scsi_pt_sense(ptvp, sense_b, sizeof(sense_b));
-    set_scsi_pt_data_out(ptvp, paramp, param_len);
+    set_scsi_pt_data_out(ptvp, (unsigned char *)paramp, param_len);
     res = do_scsi_pt(ptvp, sg_fd, DEF_PT_TIMEOUT, verbose);
     ret = sg_cmds_process_resp(ptvp, "mode select (6)", res, 0, sense_b,
                                noisy, verbose, &sense_cat);
@@ -894,7 +892,7 @@ int sg_ll_mode_select10(int sg_fd, int pf, int sp, void * paramp,
     unsigned char modesCmdBlk[MODE_SELECT10_CMDLEN] = 
         {MODE_SELECT10_CMD, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     unsigned char sense_b[SENSE_BUFF_LEN];
-    void * ptvp;
+    struct sg_pt_base * ptvp;
 
     modesCmdBlk[1] = (unsigned char)(((pf << 4) & 0x10) | (sp & 0x1));
     modesCmdBlk[7] = (unsigned char)((param_len >> 8) & 0xff);
@@ -912,7 +910,7 @@ int sg_ll_mode_select10(int sg_fd, int pf, int sp, void * paramp,
         fprintf(sg_warnings_strm, "\n");
     }
     if (verbose > 1) {
-        fprintf(sg_warnings_strm, "    mode select (10) parameter block\n");
+        fprintf(sg_warnings_strm, "    mode select (10) parameter list\n");
         dStrHex((const char *)paramp, param_len, -1);
     }
 
@@ -923,7 +921,7 @@ int sg_ll_mode_select10(int sg_fd, int pf, int sp, void * paramp,
     }
     set_scsi_pt_cdb(ptvp, modesCmdBlk, sizeof(modesCmdBlk));
     set_scsi_pt_sense(ptvp, sense_b, sizeof(sense_b));
-    set_scsi_pt_data_out(ptvp, paramp, param_len);
+    set_scsi_pt_data_out(ptvp, (unsigned char *)paramp, param_len);
     res = do_scsi_pt(ptvp, sg_fd, DEF_PT_TIMEOUT, verbose);
     ret = sg_cmds_process_resp(ptvp, "mode select (10)", res, 0, sense_b,
                                noisy, verbose, &sense_cat);
@@ -1008,7 +1006,7 @@ int sg_mode_page_offset(const unsigned char * resp, int resp_len,
  * SG_LIB_CAT_ILLEGAL_REQ -> bad field in cdb, SG_LIB_CAT_UNIT_ATTENTION,
  * SG_LIB_CAT_NOT_READY -> device not ready,
  * SG_LIB_CAT_MALFORMED -> bad response, -1 -> other failure.
- * If success_mask pointer is not NULL then zeroes it then sets bit 0, 1,
+ * If success_mask pointer is not NULL then zeros it then sets bit 0, 1,
  * 2 and/or 3 if the current, changeable, default and saved values
  * respectively have been fetched. If error on current page
  * then stops and returns that error; otherwise continues if an error is
@@ -1079,8 +1077,8 @@ int sg_get_mode_page_controls(int sg_fd, int mode6, int pg_code,
                                  ebuff, EBUFF_SZ);
     if (offset < 0) {
         if (('\0' != ebuff[0]) && (verbose > 0))
-            fprintf(sg_warnings_strm, "sg_get_mode_page_types: "
-                    "current values: %s\n", ebuff);
+            fprintf(sg_warnings_strm, "sg_get_mode_page_controls: %s\n",
+                    ebuff);
         return SG_LIB_CAT_MALFORMED;
     }
     xfer_len = calc_len - offset;
@@ -1126,7 +1124,7 @@ int sg_ll_request_sense(int sg_fd, int desc, void * resp, int mx_resp_len,
     unsigned char rsCmdBlk[REQUEST_SENSE_CMDLEN] = 
         {REQUEST_SENSE_CMD, 0, 0, 0, 0, 0};
     unsigned char sense_b[SENSE_BUFF_LEN];
-    void * ptvp;
+    struct sg_pt_base * ptvp;
 
     if (desc)
         rsCmdBlk[1] |= 0x1;
@@ -1152,7 +1150,7 @@ int sg_ll_request_sense(int sg_fd, int desc, void * resp, int mx_resp_len,
     }
     set_scsi_pt_cdb(ptvp, rsCmdBlk, sizeof(rsCmdBlk));
     set_scsi_pt_sense(ptvp, sense_b, sizeof(sense_b));
-    set_scsi_pt_data_in(ptvp, resp, mx_resp_len);
+    set_scsi_pt_data_in(ptvp, (unsigned char *)resp, mx_resp_len);
     res = do_scsi_pt(ptvp, sg_fd, DEF_PT_TIMEOUT, verbose);
     ret = sg_cmds_process_resp(ptvp, "request sense", res, mx_resp_len,
                                sense_b, noisy, verbose, &sense_cat);
@@ -1190,7 +1188,8 @@ int sg_ll_request_sense(int sg_fd, int desc, void * resp, int mx_resp_len,
 /* Invokes a SCSI REPORT LUNS command. Return of 0 -> success,
  * SG_LIB_CAT_INVALID_OP -> Report Luns not supported,
  * SG_LIB_CAT_ILLEGAL_REQ -> bad field in cdb,
- * SG_LIB_CAT_ABORTED_COMMAND, -1 -> other failure */
+ * SG_LIB_CAT_ABORTED_COMMAND,
+ * SG_LIB_NOT_READY (shouldn't happen), -1 -> other failure */
 int sg_ll_report_luns(int sg_fd, int select_report, void * resp,
                       int mx_resp_len, int noisy, int verbose)
 {
@@ -1198,7 +1197,7 @@ int sg_ll_report_luns(int sg_fd, int select_report, void * resp,
     unsigned char rlCmdBlk[REPORT_LUNS_CMDLEN] =
                          {REPORT_LUNS_CMD, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     unsigned char sense_b[SENSE_BUFF_LEN];
-    void * ptvp;
+    struct sg_pt_base * ptvp;
 
     rlCmdBlk[2] = select_report & 0xff;
     rlCmdBlk[6] = (mx_resp_len >> 24) & 0xff;
@@ -1221,7 +1220,7 @@ int sg_ll_report_luns(int sg_fd, int select_report, void * resp,
     }
     set_scsi_pt_cdb(ptvp, rlCmdBlk, sizeof(rlCmdBlk));
     set_scsi_pt_sense(ptvp, sense_b, sizeof(sense_b));
-    set_scsi_pt_data_in(ptvp, resp, mx_resp_len);
+    set_scsi_pt_data_in(ptvp, (unsigned char *)resp, mx_resp_len);
     res = do_scsi_pt(ptvp, sg_fd, DEF_PT_TIMEOUT, verbose);
     ret = sg_cmds_process_resp(ptvp, "report luns", res, mx_resp_len,
                                sense_b, noisy, verbose, &sense_cat);
@@ -1232,13 +1231,13 @@ int sg_ll_report_luns(int sg_fd, int select_report, void * resp,
         case SG_LIB_CAT_INVALID_OP:
         case SG_LIB_CAT_ILLEGAL_REQ:
         case SG_LIB_CAT_ABORTED_COMMAND:
+        case SG_LIB_CAT_NOT_READY:      /* shouldn't happen ?? */
             ret = sense_cat;
             break;
         case SG_LIB_CAT_RECOVERED:
         case SG_LIB_CAT_NO_SENSE:
             ret = 0;
             break;
-        case SG_LIB_CAT_NOT_READY:      /* shouldn't happen ?? */
         default:
             ret = -1;
             break;
@@ -1262,7 +1261,7 @@ int sg_ll_log_sense(int sg_fd, int ppc, int sp, int pc, int pg_code,
     unsigned char logsCmdBlk[LOG_SENSE_CMDLEN] = 
         {LOG_SENSE_CMD, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     unsigned char sense_b[SENSE_BUFF_LEN];
-    void * ptvp;
+    struct sg_pt_base * ptvp;
 
     if (NULL == sg_warnings_strm)
         sg_warnings_strm = stderr;
@@ -1334,7 +1333,7 @@ int sg_ll_log_select(int sg_fd, int pcr, int sp, int pc,
     unsigned char logsCmdBlk[LOG_SELECT_CMDLEN] = 
         {LOG_SELECT_CMD, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     unsigned char sense_b[SENSE_BUFF_LEN];
-    void * ptvp;
+    struct sg_pt_base * ptvp;
 
     if (NULL == sg_warnings_strm)
         sg_warnings_strm = stderr;
@@ -1354,7 +1353,7 @@ int sg_ll_log_select(int sg_fd, int pcr, int sp, int pc,
         fprintf(sg_warnings_strm, "\n");
     }
     if ((verbose > 1) && (param_len > 0)) {
-        fprintf(sg_warnings_strm, "    log select parameter block\n");
+        fprintf(sg_warnings_strm, "    log select parameter list\n");
         dStrHex((const char *)paramp, param_len, -1);
     }
 
@@ -1407,7 +1406,7 @@ int sg_ll_start_stop_unit(int sg_fd, int immed, int fl_num, int power_cond,
     unsigned char ssuBlk[START_STOP_CMDLEN] = {START_STOP_CMD, 0, 0, 0, 0, 0};
     unsigned char sense_b[SENSE_BUFF_LEN];
     int k, res, ret, sense_cat;
-    void * ptvp;
+    struct sg_pt_base * ptvp;
 
     ssuBlk[1] = immed & 1;
     ssuBlk[3] = fl_num & 3;
@@ -1470,7 +1469,7 @@ int sg_ll_prevent_allow(int sg_fd, int prevent, int noisy, int verbose)
     unsigned char pCmdBlk[PREVENT_ALLOW_CMDLEN] = 
                 {PREVENT_ALLOW_CMD, 0, 0, 0, 0, 0};
     unsigned char sense_b[SENSE_BUFF_LEN];
-    void * ptvp;
+    struct sg_pt_base * ptvp;
 
     if (NULL == sg_warnings_strm)
         sg_warnings_strm = stderr;

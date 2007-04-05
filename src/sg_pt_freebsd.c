@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005-2006 Douglas Gilbert.
+ * Copyright (c) 2005-2007 Douglas Gilbert.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,7 +27,7 @@
  *
  */
 
-/* version 1.03 2006/1/9 */
+/* version 1.07 2007/4/3 */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -53,7 +53,6 @@
 
 #define FREEBSD_MAXDEV 64
 #define FREEBSD_FDOFFSET 16;
-#define MAX_NUM_DEV 26
 
 
 struct freebsd_dev_channel {
@@ -64,7 +63,7 @@ struct freebsd_dev_channel {
 
 // Private table of open devices: guaranteed zero on startup since
 // part of static data.
-struct freebsd_dev_channel *devicetable[FREEBSD_MAXDEV];
+static struct freebsd_dev_channel *devicetable[FREEBSD_MAXDEV];
 
 #define DEF_TIMEOUT 60000       /* 60,000 milliseconds (60 seconds) */
 
@@ -84,6 +83,10 @@ struct sg_pt_freebsd_scsi {
     int in_err;
     int os_err;
     int transport_err;
+};
+
+struct sg_pt_base {
+    struct sg_pt_freebsd_scsi impl;
 };
 
 
@@ -109,17 +112,18 @@ int scsi_pt_open_device(const char * device_name,
         if (verbose)
             fprintf(sg_warnings_strm, "too many open file descriptors "
                     "(%d)\n", FREEBSD_MAXDEV);
-        errno=EMFILE;
+        errno = EMFILE;
         return -1;
     }
 
-    fdchan = calloc(1,sizeof(struct freebsd_dev_channel));
+    fdchan = (struct freebsd_dev_channel *)
+                calloc(1,sizeof(struct freebsd_dev_channel));
     if (fdchan == NULL) {
         // errno already set by call to malloc()
         return -1;
     }
 
-    if (! (fdchan->devname = calloc(1, DEV_IDLEN+1)))
+    if (! (fdchan->devname = (char *)calloc(1, DEV_IDLEN+1)))
          return -1;
 
     if (cam_get_device(device_name, fdchan->devname, DEV_IDLEN,
@@ -168,21 +172,22 @@ int scsi_pt_close_device(int device_fd)
     return 0;
 }
 
-void * construct_scsi_pt_obj()
+struct sg_pt_base * construct_scsi_pt_obj()
 {
     struct sg_pt_freebsd_scsi * ptp;
 
-    ptp = malloc(sizeof(struct sg_pt_freebsd_scsi));
+    ptp = (struct sg_pt_freebsd_scsi *)
+                malloc(sizeof(struct sg_pt_freebsd_scsi));
     if (ptp) {
         memset(ptp, 0, sizeof(struct sg_pt_freebsd_scsi));
         ptp->dxfer_dir = CAM_DIR_NONE;
     }
-    return ptp;
+    return (struct sg_pt_base *)ptp;
 }
 
-void destruct_scsi_pt_obj(void * vp)
+void destruct_scsi_pt_obj(struct sg_pt_base * vp)
 {
-    struct sg_pt_freebsd_scsi * ptp = vp;
+    struct sg_pt_freebsd_scsi * ptp = &vp->impl;
 
     if (ptp) {
         if (ptp->ccb)
@@ -191,9 +196,10 @@ void destruct_scsi_pt_obj(void * vp)
     }
 }
 
-void set_scsi_pt_cdb(void * vp, const unsigned char * cdb, int cdb_len)
+void set_scsi_pt_cdb(struct sg_pt_base * vp, const unsigned char * cdb,
+                     int cdb_len)
 {
-    struct sg_pt_freebsd_scsi * ptp = vp;
+    struct sg_pt_freebsd_scsi * ptp = &vp->impl;
 
     if (ptp->cdb)
         ++ptp->in_err;
@@ -201,10 +207,10 @@ void set_scsi_pt_cdb(void * vp, const unsigned char * cdb, int cdb_len)
     ptp->cdb_len = cdb_len;
 }
 
-void set_scsi_pt_sense(void * vp, unsigned char * sense,
+void set_scsi_pt_sense(struct sg_pt_base * vp, unsigned char * sense,
                        int max_sense_len)
 {
-    struct sg_pt_freebsd_scsi * ptp = vp;
+    struct sg_pt_freebsd_scsi * ptp = &vp->impl;
 
     if (ptp->sense)
         ++ptp->in_err;
@@ -213,10 +219,10 @@ void set_scsi_pt_sense(void * vp, unsigned char * sense,
     ptp->sense_len = max_sense_len;
 }
 
-void set_scsi_pt_data_in(void * vp,             /* from device */
+void set_scsi_pt_data_in(struct sg_pt_base * vp,             /* from device */
                          unsigned char * dxferp, int dxfer_len)
 {
-    struct sg_pt_freebsd_scsi * ptp = vp;
+    struct sg_pt_freebsd_scsi * ptp = &vp->impl;
 
     if (ptp->dxferp)
         ++ptp->in_err;
@@ -227,10 +233,10 @@ void set_scsi_pt_data_in(void * vp,             /* from device */
     }
 }
 
-void set_scsi_pt_data_out(void * vp,            /* to device */
+void set_scsi_pt_data_out(struct sg_pt_base * vp,            /* to device */
                           const unsigned char * dxferp, int dxfer_len)
 {
-    struct sg_pt_freebsd_scsi * ptp = vp;
+    struct sg_pt_freebsd_scsi * ptp = &vp->impl;
 
     if (ptp->dxferp)
         ++ptp->in_err;
@@ -241,38 +247,41 @@ void set_scsi_pt_data_out(void * vp,            /* to device */
     }
 }
 
-void set_scsi_pt_packet_id(void * vp __attribute__ ((unused)),
+void set_scsi_pt_packet_id(struct sg_pt_base * vp __attribute__ ((unused)),
                            int pack_id __attribute__ ((unused)))
 {
 }
 
-void set_scsi_pt_tag(void * vp, int tag __attribute__ ((unused)))
+void set_scsi_pt_tag(struct sg_pt_base * vp,
+                     unsigned long long tag __attribute__ ((unused)))
 {
-    struct sg_pt_freebsd_scsi * ptp = vp;
+    struct sg_pt_freebsd_scsi * ptp = &vp->impl;
 
     ++ptp->in_err;
 }
 
-void set_scsi_pt_task_management(void * vp,
+void set_scsi_pt_task_management(struct sg_pt_base * vp,
                                  int tmf_code __attribute__ ((unused)))
 {
-    struct sg_pt_freebsd_scsi * ptp = vp;
+    struct sg_pt_freebsd_scsi * ptp = &vp->impl;
 
     ++ptp->in_err;
 }
 
-void set_scsi_pt_task_attr(void * vp, int attrib __attribute__ ((unused)),
-                          int priority __attribute__ ((unused)))
+void set_scsi_pt_task_attr(struct sg_pt_base * vp,
+                           int attrib __attribute__ ((unused)),
+                           int priority __attribute__ ((unused)))
 {
-    struct sg_pt_freebsd_scsi * ptp = vp;
+    struct sg_pt_freebsd_scsi * ptp = &vp->impl;
 
     ++ptp->in_err;
 }
 
-int do_scsi_pt(void * vp, int device_fd, int time_secs, int verbose)
+int do_scsi_pt(struct sg_pt_base * vp, int device_fd, int time_secs,
+               int verbose)
 {
     int fd = device_fd - FREEBSD_FDOFFSET;
-    struct sg_pt_freebsd_scsi * ptp = vp;
+    struct sg_pt_freebsd_scsi * ptp = &vp->impl;
     struct freebsd_dev_channel *fdchan;
     union ccb *ccb;
     int len, timout_ms;
@@ -367,9 +376,9 @@ int do_scsi_pt(void * vp, int device_fd, int time_secs, int verbose)
     return 0;
 }
 
-int get_scsi_pt_result_category(const void * vp)
+int get_scsi_pt_result_category(const struct sg_pt_base * vp)
 {
-    const struct sg_pt_freebsd_scsi * ptp = vp;
+    const struct sg_pt_freebsd_scsi * ptp = &vp->impl;
 
     if (ptp->os_err)
         return SCSI_PT_RESULT_OS_ERR;
@@ -384,54 +393,55 @@ int get_scsi_pt_result_category(const void * vp)
         return SCSI_PT_RESULT_GOOD;
 }
 
-int get_scsi_pt_resid(const void * vp)
+int get_scsi_pt_resid(const struct sg_pt_base * vp)
 {
-    const struct sg_pt_freebsd_scsi * ptp = vp;
+    const struct sg_pt_freebsd_scsi * ptp = &vp->impl;
 
     return ptp->resid;
 }
 
-int get_scsi_pt_status_response(const void * vp)
+int get_scsi_pt_status_response(const struct sg_pt_base * vp)
 {
-    const struct sg_pt_freebsd_scsi * ptp = vp;
+    const struct sg_pt_freebsd_scsi * ptp = &vp->impl;
 
     return ptp->scsi_status;
 }
 
-int get_scsi_pt_sense_len(const void * vp)
+int get_scsi_pt_sense_len(const struct sg_pt_base * vp)
 {
-    const struct sg_pt_freebsd_scsi * ptp = vp;
+    const struct sg_pt_freebsd_scsi * ptp = &vp->impl;
     int len;
 
     len = ptp->sense_len - ptp->sense_resid;
     return (len > 0) ? len : 0;
 }
 
-int get_scsi_pt_duration_ms(const void * vp __attribute__ ((unused)))
+int get_scsi_pt_duration_ms(const struct sg_pt_base * vp __attribute__ ((unused)))
 {
-    // const struct sg_pt_freebsd_scsi * ptp = vp;
+    // const struct sg_pt_freebsd_scsi * ptp = &vp->impl;
 
     return -1;
 }
 
-int get_scsi_pt_transport_err(const void * vp)
+int get_scsi_pt_transport_err(const struct sg_pt_base * vp)
 {
-    const struct sg_pt_freebsd_scsi * ptp = vp;
+    const struct sg_pt_freebsd_scsi * ptp = &vp->impl;
 
     return ptp->transport_err;
 }
 
-int get_scsi_pt_os_err(const void * vp)
+int get_scsi_pt_os_err(const struct sg_pt_base * vp)
 {
-    const struct sg_pt_freebsd_scsi * ptp = vp;
+    const struct sg_pt_freebsd_scsi * ptp = &vp->impl;
 
     return ptp->os_err;
 }
 
 
-char * get_scsi_pt_transport_err_str(const void * vp, int max_b_len, char * b)
+char * get_scsi_pt_transport_err_str(const struct sg_pt_base * vp,
+                                     int max_b_len, char * b)
 {
-    struct sg_pt_freebsd_scsi * ptp = (void *)vp;
+    const struct sg_pt_freebsd_scsi * ptp = &vp->impl;
 
     if (0 == ptp->transport_err) {
         strncpy(b, "no transport error available", max_b_len);
@@ -453,10 +463,10 @@ char * get_scsi_pt_transport_err_str(const void * vp, int max_b_len, char * b)
     return b;
 }
 
-char * get_scsi_pt_os_err_str(const void * vp,
+char * get_scsi_pt_os_err_str(const struct sg_pt_base * vp,
                               int max_b_len, char * b)
 {
-    const struct sg_pt_freebsd_scsi * ptp = vp;
+    const struct sg_pt_freebsd_scsi * ptp = &vp->impl;
     const char * cp;
 
     cp = safe_strerror(ptp->os_err);

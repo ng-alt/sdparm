@@ -38,6 +38,9 @@
 #define IEC_MP 0x1c
 #define MED_CONF_MP 0x1d
 #define TIMEOUT_PROT_MP 0x1d
+#define ELE_ADDR_ASS_MP 0x1d
+#define TRANS_GEO_PAR_MP 0x1e
+#define DEV_CAP_MP 0x1f
 #define MMCMS_MP 0x2a
 #define ALL_MPAGES 0x3f
 
@@ -49,10 +52,11 @@
 #define MSP_SPI_NS 3
 #define MSP_SPI_RTC 4
 #define MSP_SAS_PCD 1
-#define MSP_SAS_SHA 2
+#define MSP_SAS_SPC 2
 #define MSP_BACK_CTL 1
 #define MSP_SAT_PATA 0xf1       /* SAT PATA Control */
 #define MSP_DEV_CONF_EXT 1      /* device conf extension (ssc) */
+#define MSP_EXT_DEV_CAP 0x41    /* extended device capabilities (smc) */
 
 #define MODE_DATA_OVERHEAD 128
 #define EBUFF_SZ 256
@@ -102,6 +106,7 @@
 #define VENDOR_SEAGATE 0x0
 #define VENDOR_HITACHI 0x1
 #define VENDOR_MAXTOR 0x2
+#define VENDOR_FUJITSU 0x3
 
 /* bit flag settings for sdparm_mode_page_item::flags */
 #define MF_COMMON 0x1   /* output in summary mode */

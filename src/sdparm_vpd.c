@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005-2006 Douglas Gilbert.
+ * Copyright (c) 2005-2007 Douglas Gilbert.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -32,6 +32,8 @@
 #include <string.h>
 #include <errno.h>
 #include <ctype.h>
+#define __STDC_FORMAT_MACROS 1
+#include <inttypes.h>
 
 #include "sdparm.h"
 #include "sg_lib.h"
@@ -134,7 +136,7 @@ static int decode_dev_ids_quiet(unsigned char * buff, int len,
             break;
         case 4: /* Relative target port */
             break;
-        case 5: /* Target port group */
+        case 5: /* (primary) Target port group */
             break;
         case 6: /* Logical unit group */
             break;
@@ -203,7 +205,7 @@ static int decode_dev_ids(const char * print_if_found, unsigned char * buff,
         }
         if (NULL == print_if_found)
             printf("  %s:\n", sdparm_assoc_arr[assoc]);
-        printf("    desig_type: %s,  code_set: %s\n",
+        printf("    designator type: %s,  code set: %s\n",
                sdparm_desig_type_arr[desig_type], sdparm_code_set_arr[c_set]);
         if (piv && ((1 == assoc) || (2 == assoc)))
             printf("     transport: %s\n", sdparm_transport_proto_arr[p_id]);
@@ -246,7 +248,7 @@ static int decode_dev_ids(const char * print_if_found, unsigned char * buff,
                         id_ext <<= 8;
                     id_ext |= ip[m];
                 }
-                printf("      Identifier extension: 0x%llx\n", id_ext);
+                printf("      Identifier extension: 0x%" PRIx64 "\n", id_ext);
             } else if ((8 != i_len) && (12 != i_len)) {
                 fprintf(stderr, "      << can only decode 8, 12 and 16 "
                         "byte ids>>\n");
@@ -262,8 +264,8 @@ static int decode_dev_ids(const char * print_if_found, unsigned char * buff,
                     vsei <<= 8;
                 vsei |= ip[ci_off + 3 + m];
             }
-            printf("      Vendor Specific Extension Identifier: 0x%llx\n",
-                   vsei);
+            printf("      Vendor Specific Extension Identifier: 0x%" PRIx64
+                   "\n", vsei);
             if (12 == i_len) {
                 d_id = ((ip[8] << 24) | (ip[9] << 16) | (ip[10] << 8) |
                         ip[11]);
@@ -322,8 +324,8 @@ static int decode_dev_ids(const char * print_if_found, unsigned char * buff,
                 }
                 if (long_out) {
                     printf("      NAA 5, IEEE Company_id: 0x%x\n", c_id);
-                    printf("      Vendor Specific Identifier: 0x%llx\n",
-                           vsei);
+                    printf("      Vendor Specific Identifier: 0x%" PRIx64
+                           "\n", vsei);
                     printf("      [0x");
                     for (m = 0; m < 8; ++m)
                         printf("%02x", (unsigned int)ip[m]);
@@ -350,8 +352,8 @@ static int decode_dev_ids(const char * print_if_found, unsigned char * buff,
                 }
                 if (long_out) {
                     printf("      NAA 6, IEEE Company_id: 0x%x\n", c_id);
-                    printf("      Vendor Specific Identifier: 0x%llx\n",
-                           vsei);
+                    printf("      Vendor Specific Identifier: 0x%" PRIx64
+                           "\n", vsei);
                     vsei = 0;
                     for (m = 0; m < 8; ++m) {
                         if (m > 0)
@@ -359,7 +361,7 @@ static int decode_dev_ids(const char * print_if_found, unsigned char * buff,
                         vsei |= ip[8 + m];
                     }
                     printf("      Vendor Specific Identifier Extension: "
-                           "0x%llx\n", vsei);
+                           "0x%" PRIx64 "\n", vsei);
                     printf("      [0x");
                     for (m = 0; m < 16; ++m)
                         printf("%02x", (unsigned int)ip[m]);
@@ -382,7 +384,7 @@ static int decode_dev_ids(const char * print_if_found, unsigned char * buff,
             d_id = ((ip[2] << 8) | ip[3]);
             printf("      Relative target port: 0x%x\n", d_id);
             break;
-        case 5: /* Target port group */
+        case 5: /* (primary) Target port group */
             if ((1 != c_set) || (1 != assoc) || (4 != i_len)) {
                 fprintf(stderr, "      << expected binary code_set, target "
                         "port association, length 4>>\n");
@@ -548,21 +550,38 @@ static int decode_scsi_ports_vpd(unsigned char * buff, int len,
     return 0;
 }
 
-static int decode_ext_inq_vpd(unsigned char * buff, int len)
+static int decode_ext_inq_vpd(unsigned char * buff, int len, int quiet)
 {
     if (len < 7) {
         fprintf(stderr, "Extended INQUIRY data VPD page length too "
                 "short=%d\n", len);
         return SG_LIB_CAT_MALFORMED;
     }
-    printf("  SPT: %d  GRD_CHK: %d  APP_CHK: %d  REF_CHK: %d\n",
-           ((buff[4] >> 3) & 0x7), !!(buff[4] & 0x4), !!(buff[4] & 0x2),
-           !!(buff[4] & 0x1));
-    printf("  GRP_SUP: %d  PRIOR_SUP: %d  HEADSUP: %d  ORDSUP: %d  "
-           "SIMPSUP: %d\n", !!(buff[5] & 0x10), !!(buff[5] & 0x8),
-           !!(buff[5] & 0x4), !!(buff[5] & 0x2), !!(buff[5] & 0x1));
-    printf("  CORR_D_SUP=%d NV_SUP=%d V_SUP=%d\n", !!(buff[6] & 0x80),
-           !!(buff[6] & 0x2), !!(buff[6] & 0x1));
+    if (quiet) {
+        printf("spt=%d\n", ((buff[4] >> 3) & 0x7));
+        printf("grd_chk=%d\n", !!(buff[4] & 0x4));
+        printf("app_chk=%d\n", !!(buff[4] & 0x2));
+        printf("ref_chk=%d\n", !!(buff[4] & 0x1));
+        printf("GRP_SUP=%d\n", !!(buff[5] & 0x10));
+        printf("prior_sup=%d\n", !!(buff[5] & 0x8));
+        printf("headsup=%d\n", !!(buff[5] & 0x4));
+        printf("ordsup=%d\n", !!(buff[5] & 0x2));
+        printf("simpsup=%d\n", !!(buff[5] & 0x1)); 
+        printf("corr_d_sup=%d\n", !!(buff[6] & 0x4));
+        printf("nv_sup=%d\n", !!(buff[6] & 0x2));
+        printf("v_sup=%d\n", !!(buff[6] & 0x1));
+        printf("luiclr=%d\n", !!(buff[7] & 0x1));
+    } else {
+        printf("  SPT: %d  GRD_CHK: %d  APP_CHK: %d  REF_CHK: %d\n",
+               ((buff[4] >> 3) & 0x7), !!(buff[4] & 0x4), !!(buff[4] & 0x2),
+               !!(buff[4] & 0x1));
+        printf("  GRP_SUP: %d  PRIOR_SUP: %d  HEADSUP: %d  ORDSUP: %d  "
+               "SIMPSUP: %d\n", !!(buff[5] & 0x10), !!(buff[5] & 0x8),
+               !!(buff[5] & 0x4), !!(buff[5] & 0x2), !!(buff[5] & 0x1));
+        printf("  CORR_D_SUP: %d  NV_SUP: %d  V_SUP: %d  LUICLR: %d\n",
+               !!(buff[6] & 0x4), !!(buff[6] & 0x2), !!(buff[6] & 0x1),
+               !!(buff[7] & 0x1));
+    }
     return 0;
 }
 
@@ -642,6 +661,12 @@ static int decode_block_limits_vpd(unsigned char * buff, int len)
     u = (buff[12] << 24) | (buff[13] << 16) | (buff[14] << 8) |
         buff[15];
     printf("  Optimal transfer length: %u blocks\n", u);
+    if (len > 19) {     /* added in sbc3r09 */
+        u = (buff[16] << 24) | (buff[17] << 16) | (buff[18] << 8) |
+            buff[19];
+        printf("  Maximum prefetch, xdread, xdwrite transfer length: %u "
+               "blocks\n", u);
+    }
     return 0;
 }
 
@@ -862,13 +887,13 @@ int sdp_process_vpd_page(int sg_fd, int pn, int spn,
         }
         if (opts->long_out)
             printf("Extended inquiry data [0x86] VPD page:\n");
-        else
+        else if (! opts->quiet)
             printf("Extended inquiry data VPD page:\n");
         if (opts->hex) {
             dStrHex((const char *)b, len + 4, 0);
             return 0;
         }
-        res = decode_ext_inq_vpd(b, len + 4);
+        res = decode_ext_inq_vpd(b, len + 4, opts->quiet);
         if (res)
             return res;
         break;

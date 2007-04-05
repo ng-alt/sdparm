@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005-2006 Douglas Gilbert.
+ * Copyright (c) 2005-2007 Douglas Gilbert.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -42,7 +42,8 @@
  */
 
 
-/* Mode pages that aren't specific to any transport protocol or vendor */
+/* Mode pages that aren't specific to any transport protocol or vendor.
+   They are listed in acronym alphabetical order. */
 struct sdparm_values_name_t sdparm_gen_mode_pg[] = {
     {IEC_MP, MSP_BACK_CTL, 0, 0, "bc", "Background control (SBC)"},
     {CACHING_MP, 0, 0, 0, "ca", "Caching (SBC)"},
@@ -54,6 +55,8 @@ struct sdparm_values_name_t sdparm_gen_mode_pg[] = {
     {DEV_CONF_MP, 0, 1, 0, "dc", "Device configuration (SSC)"},
     {DEV_CONF_MP, MSP_DEV_CONF_EXT, 1, 0, "dce", "Device configuration "
         "extension (SSC)"},
+    {DISCONNECT_MP, 0, -1, 0, "dr", "Disconnect-reconnect (SPC + transports)"},
+    {ELE_ADDR_ASS_MP, 0, 0x8, 0, "eaa", "Element address assignment (SMC)"},
     {ES_MAN_MP, 0, 0xd, 0, "esm", "Enclosure services management (SES)"},
     {FORMAT_MP, 0, 0, 0, "fo", "Format (SBC)"},
     {IEC_MP, 0, -1, 0, "ie", "Informational exceptions control"},
@@ -135,16 +138,12 @@ static struct sdparm_values_name_t sdparm_srp_mode_pg[] = {    /* SRP */
 
 static struct sdparm_values_name_t sdparm_sas_mode_pg[] = {    /* SAS-2 */
     {DISCONNECT_MP, 0, -1, 0, "dr", "Disconnect-reconnect (SAS)"},
-    {PROT_SPEC_LU_MP, 0, -1, 0, "lsf", "lu: SSP short format (SAS)"},
+    {PROT_SPEC_LU_MP, 0, -1, 0, "p1", "Protocol specific logical unit (SAS)"},
     {PROT_SPEC_PORT_MP, MSP_SAS_PCD, -1, 0, "pcd",
-        "port: phy control and discover (SAS)"},
-    {PROT_SPEC_PORT_MP, 0, -1, 0, "psf", "port: SSP short format (SAS)"},
-    {PROT_SPEC_PORT_MP, MSP_SAS_SHA, -1, 0, "sha",
-        "port: shared protocol specific (SAS)"},
-    /* second preference name so put out of alphabetical order */
-    {PROT_SPEC_LU_MP, 0, -1, 0, "pl", "lu: SSP short format (generic name)"},
-    {PROT_SPEC_PORT_MP, 0, -1, 0, "pp",
-        "port: SSP short format (generic name)"},
+        "Phy control and discover (SAS)"},
+    {PROT_SPEC_PORT_MP, 0, -1, 0, "pp", "Protocol specific port (SAS)"},
+    {PROT_SPEC_PORT_MP, MSP_SAS_SPC, -1, 0, "spc",
+        "Shared port control (SAS)"},
     {0, 0, 0, 0, NULL, NULL},
 };
 
@@ -221,7 +220,33 @@ struct sdparm_mode_page_item sdparm_mitem_arr[] = {
     {"RTL", RW_ERR_RECOVERY_MP, 0, 0, 10, 7, 16, 0, /* SBC */
         "Recovery time limit (ms)", NULL},
 
-    /* Disconnect-reconnect mode page [0x2]: see transport section */
+    /* Disconnect-reconnect mode page [0x2]: spc-4 + */
+    /* See transport sections for more detailed information */
+    {"BFR", DISCONNECT_MP, 0, -1, 2, 7, 8, 0,
+        "Buffer full ratio",
+        "fraction where this value is numerator, 256 is denominator"},
+    {"BER", DISCONNECT_MP, 0, -1, 3, 7, 8, 0,
+        "Buffer empty ratio",
+        "fraction where this value is numerator, 256 is denominator"},
+    {"BIL", DISCONNECT_MP, 0, -1, 4, 7, 16, 0,
+        "Bus inactivity limit", "for unit see specific transport"},
+    {"DTL", DISCONNECT_MP, 0, -1, 6, 7, 16, 0,
+        "Disconnect time limit", "for unit see specific transport"},
+    {"CTL", DISCONNECT_MP, 0, -1, 8, 7, 16, 0,
+        "Connect time limit", "for unit see specific transport"},
+    {"MBS", DISCONNECT_MP, 0, -1, 10, 7, 16, 0,
+        "Maximum burst size (512 bytes)", NULL},
+    {"EMDP", DISCONNECT_MP, 0, -1, 12, 7, 1, 0,
+        "Enable modify data pointers",
+        "1: target may send data out of order"},
+    {"FA", DISCONNECT_MP, 0, -1, 12, 6, 3, 0,
+        "Fair arbitration", NULL},
+    {"DIMM", DISCONNECT_MP, 0, -1, 12, 3, 1, 0,
+        "Disconnect immediate", NULL},
+    {"DTDC", DISCONNECT_MP, 0, -1, 12, 2, 3, 0,
+        "Data transfer disconnect control", NULL},
+    {"FBS", DISCONNECT_MP, 0, -1, 14, 7, 16, 0,
+        "First burst size (512 bytes)", NULL},
 
     /* Format mode page [0x3] sbc2 (obsolete) */
     {"TPZ", FORMAT_MP, 0, 0, 2, 7, 16, 0,
@@ -291,11 +316,11 @@ struct sdparm_mode_page_item sdparm_mitem_arr[] = {
         "0: next session not allowed (no BO pointer)\t"
         "1: next session not allowed\t"
         "3: next seesion allowed (indicated by BO pointer)"},
-    {"FP", WRITE_PARAM_MP, 0, 5, 3, 5, 1, MF_COMMON,
+    {"FP", WRITE_PARAM_MP, 0, 5, 3, 5, 1, 0,
         "Fixed packet type", NULL},
     {"COPY", WRITE_PARAM_MP, 0, 5, 3, 4, 1, 0,
         "Serial copy management system (SCMS) enable", NULL},
-    {"TRACK_M", WRITE_PARAM_MP, 0, 5, 3, 3, 4, MF_COMMON,
+    {"TRACK_M", WRITE_PARAM_MP, 0, 5, 3, 3, 4, 0,
         "Track mode", NULL},
     {"DBT", WRITE_PARAM_MP, 0, 5, 4, 3, 4, 0,
         "Data block type", NULL},
@@ -438,7 +463,7 @@ struct sdparm_mode_page_item sdparm_mitem_arr[] = {
         "1: any other I_T nexuses receive task aborted"},
     {"AUTOLOAD", CONTROL_MP, 0, -1, 5, 2, 3, 0,
         "Autoload mode", 
-        "0: medium loaded for full access;\t"
+        "0: medium loaded for full access\t"
         "1: loaded for medium auxiliary access only\t"
         "2: medium shall not be loaded"},
     {"BTP", CONTROL_MP, 0, -1, 8, 7, 16, 0,
@@ -453,6 +478,9 @@ struct sdparm_mode_page_item sdparm_mitem_arr[] = {
         "SCSI timestamp commands take precedence over other methods", NULL},
     {"IALUAE", CONTROL_MP, MSP_SPC_CE, -1, 4, 0, 1, 0,
         "Implicit asymmetric logical unit access enabled", NULL},
+    {"INIT_PR", CONTROL_MP, MSP_SPC_CE, -1, 5, 3, 4, 0,
+        "Initial priority", "0: none or vendor\t"
+        "1: highest\t15: lowest"},
 
     /* SAT: pATA control mode subpage [0xa,0xf1] sat-r09 */
     /* treat as spc since could be disk or ATAPI */
@@ -718,6 +746,25 @@ struct sdparm_mode_page_item sdparm_mitem_arr[] = {
         "Group 1 minimum timeout (sec)", NULL},
     {"G2MT", TIMEOUT_PROT_MP, 0, 5, 8, 7, 16, 0,
         "Group 2 minimum timeout (sec)", NULL},
+
+
+    /* Element address assignment mode page [0x1d] smc2 */
+    {"FMTEA", ELE_ADDR_ASS_MP, 0, 8, 2, 7, 16, 0,
+        "First medium transport element address", NULL},
+    {"NMTE", ELE_ADDR_ASS_MP, 0, 8, 4, 7, 16, 0,
+        "Number of medium transport elements", NULL},
+    {"FSEA", ELE_ADDR_ASS_MP, 0, 8, 6, 7, 16, 0,
+        "First storage element address", NULL},
+    {"NSE", ELE_ADDR_ASS_MP, 0, 8, 8, 7, 16, 0,
+        "Number of storage elements", NULL},
+    {"FIEEA", ELE_ADDR_ASS_MP, 0, 8, 10, 7, 16, 0,
+        "First import/export element address", NULL},
+    {"NIEE", ELE_ADDR_ASS_MP, 0, 8, 12, 7, 16, 0,
+        "Number of import/export elements", NULL},
+    {"FDTEA", ELE_ADDR_ASS_MP, 0, 8, 14, 7, 16, 0,
+        "First data transfer element address", NULL},
+    {"NDTE", ELE_ADDR_ASS_MP, 0, 8, 16, 7, 16, 0,
+        "Number of data transfer elements", NULL},
 
     /* CD/DVD (MM) capabilities and mechanical status mode page */
     /* [0x2a] obsolete in mmc4 and mmc5, last valid in mmc3 */
@@ -1045,14 +1092,14 @@ static struct sdparm_mode_page_item sdparm_mitem_sas_arr[] = {
     {"FBS", DISCONNECT_MP, 0, -1, 14, 7, 16, 0,
         "First burst size (512 bytes)", NULL},
 
-    /* protocol specific logical unit control mode page [0x18] sas1 */
+    /* protocol specific logical unit mode page [0x18] sas2 */
     {"LUPID", PROT_SPEC_LU_MP, 0, -1, 2, 3, 4, MF_COMMON,
         "Logical unit's (transport) protocol identifier",
         "0: fcp; 1: spi; 4: srp; 5: iscsi; 6: sas; 7: adt; 8: ata/atapi"},
     {"TLR", PROT_SPEC_LU_MP, 0, -1, 2, 4, 1, 0,
         "Transport layer retries (supported)", NULL},
 
-    /* protocol specific port control page - short format [0x19] sas1 */
+    /* protocol specific port mode page [0x19] sas2 */
     {"PPID", PROT_SPEC_PORT_MP, 0, -1, 2, 3, 4, MF_COMMON,
         "Port's (transport) protocol identifier",
         "0: fcp; 1: spi; 4: srp; 5: iscsi; 6: sas; 7: adt; 8: ata/atapi"},
@@ -1067,7 +1114,7 @@ static struct sdparm_mode_page_item sdparm_mitem_sas_arr[] = {
     {"IRT", PROT_SPEC_PORT_MP, 0, -1, 6, 7, 16, MF_COMMON, 
         "Initiator response timeout (ms)", NULL},
 
-    /* phy control + discover subpage [0x19,0x1] sas1 */
+    /* phy control and discover mode page [0x19,0x1] sas2 */
     {"PPID_1", PROT_SPEC_PORT_MP, MSP_SAS_PCD, -1, 5, 3, 4, 0,
         "Port's (transport) protocol identifier",
         "0: fcp; 1: spi; 4: srp; 5: iscsi; 6: sas; 7: adt; 8: ata/atapi"},
@@ -1080,8 +1127,16 @@ static struct sdparm_mode_page_item sdparm_mitem_sas_arr[] = {
         "Attached device type",
         "0: no device attached; 1: end device\t"
         "2: edge expander device; 3: fanout expander device"},
+    {"AREAS", PROT_SPEC_PORT_MP, MSP_SAS_PCD, -1, 12, 3, 4, 0, 
+        "Attached reason (other end did link reset)",
+        "0: unknown; 1: power on; 2: hard reset; 3: SMP phy control\t"
+        "4: loss of dword sync; 5: mux problem; ..."},
+    {"REAS", PROT_SPEC_PORT_MP, MSP_SAS_PCD, -1, 13, 7, 4, 0, 
+        "Reason (for starting link reset)",
+        "0: unknown; 1: power on; 2: hard reset; 3: SMP phy control\t"
+        "4: loss of dword sync; 5: mux problem; ..."},
     {"NPLR", PROT_SPEC_PORT_MP, MSP_SAS_PCD, -1, 13, 3, 4, 0, 
-        "Negotiated physical link rate",
+        "Negotiated logical link rate",         /* sas2r07 */
         "0: unknown; 1: disabled; 2: phy reset problem; 3: spinup hold\t"
         "4: port selector; 8: 1.5 Gbps; 9: 3 Gbps; 0xa: 6 Gbps"},
     {"ASIP", PROT_SPEC_PORT_MP, MSP_SAS_PCD, -1, 14, 3, 1, 0, 
@@ -1121,6 +1176,14 @@ static struct sdparm_mode_page_item sdparm_mitem_sas_arr[] = {
         "Attached device type",
         "0: no device attached; 1: end device\t"
         "2: edge expander device; 3: fanout expander device"},
+    {"2_AREAS", PROT_SPEC_PORT_MP, MSP_SAS_PCD, -1, 60, 3, 4, 0, 
+        "Attached reason (other end did link reset)",
+        "0: unknown; 1: power on; 2: hard reset; 3: SMP phy control\t"
+        "4: loss of dword sync; 5: mux problem; ..."},
+    {"2_REAS", PROT_SPEC_PORT_MP, MSP_SAS_PCD, -1, 61, 7, 4, 0, 
+        "Reason (for starting link reset)",
+        "0: unknown; 1: power on; 2: hard reset; 3: SMP phy control\t"
+        "4: loss of dword sync; 5: mux problem; ..."},
     {"2_NPLR", PROT_SPEC_PORT_MP, MSP_SAS_PCD, -1, 61, 3, 4, 0, 
         "Negotiated physical link rate",
         "0: unknown; 1: disabled; 2: phy reset problem; 3: spinup hold\t"
@@ -1156,11 +1219,11 @@ static struct sdparm_mode_page_item sdparm_mitem_sas_arr[] = {
         "Hardware maximum link rate",
         "8: 1.5 Gbps; 9: 3 Gbps; 0xa: 6 Gbps"},
 
-    /* SSP shared protocol specific port subpage [0x19,0x2] sas2 */
-    {"PPID_2", PROT_SPEC_PORT_MP, MSP_SAS_SHA, -1, 5, 3, 4, 0,
+    /* shared port control mode page [0x19,0x2] sas2 */
+    {"PPID_2", PROT_SPEC_PORT_MP, MSP_SAS_SPC, -1, 5, 3, 4, 0,
         "Port's (transport) protocol identifier",
         "0: fcp; 1: spi; 4: srp; 5: iscsi; 6: sas; 7: adt; 8: ata/atapi"},
-    {"PLT", PROT_SPEC_PORT_MP, MSP_SAS_SHA, -1, 6, 7, 16, 0, 
+    {"PLT", PROT_SPEC_PORT_MP, MSP_SAS_SPC, -1, 6, 7, 16, 0, 
         "Power loss timeout(ms)", NULL},
 
     {NULL, 0, 0, 0, 0, 0, 0, 0, NULL, NULL},
@@ -1192,6 +1255,7 @@ struct sdparm_values_name_t sdparm_vendor_id[] = {
     {VENDOR_SEAGATE, 0, -1, 0, "sea", "Seagate disk"},
     {VENDOR_HITACHI, 0, -1, 0, "hit", "Hitachi disk"},
     {VENDOR_MAXTOR, 0, -1, 0, "max", "Maxtor disk"},
+    {VENDOR_FUJITSU, 0, -1, 0, "fuj", "Fujitsu disk"},
     {0, 0, 0, 0, NULL, NULL},
 };
 
@@ -1316,11 +1380,23 @@ static struct sdparm_mode_page_item sdparm_mitem_v_maxtor_arr[] = {
         "Disable unit attention", NULL},
 };
 
+static struct sdparm_values_name_t sdparm_v_fujitsu_mode_pg[] = {
+    {0x21, 0, 0, 0, "aerp", "Additional error recovery parameters (fujitsu)"},
+    {0, 0, 0, 0, NULL, NULL},
+};
+
+static struct sdparm_mode_page_item sdparm_mitem_v_fujitsu_arr[] = {
+    /* Additional error recovery parameters page [0x21] Fujitsu */
+    {"RDSE", 0x21, 0, 0, 2, 3, 4, MF_COMMON,
+        "Retries during a seek error", "0: no repositioning retries"},
+};
+
 /* Indexed by VENDOR_* define */
 struct sdparm_vendor_pair sdparm_vendor_mp[] = {
     {sdparm_v_seagate_mode_pg, sdparm_mitem_v_seagate_arr},
     {sdparm_v_hitachi_mode_pg, sdparm_mitem_v_hitachi_arr},
     {sdparm_v_maxtor_mode_pg, sdparm_mitem_v_maxtor_arr},
+    {sdparm_v_fujitsu_mode_pg, sdparm_mitem_v_fujitsu_arr},
 };
 
 int sdparm_vendor_mp_len = 
@@ -1396,7 +1472,7 @@ const char * sdparm_desig_type_arr[] =
     "EUI-64 based",
     "NAA",
     "Relative target port",
-    "Target port group",
+    "Target port group",        /* spc4r09: _primary_ target port group */
     "Logical unit group",
     "MD5 logical unit identifier",
     "SCSI name string",
