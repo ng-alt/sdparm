@@ -45,15 +45,18 @@
 
 /* Prints outs an abridged set of device identification designators
    selected by association, designator type and/or code set. */
-static int decode_dev_ids_quiet(unsigned char * buff, int len,
-                                int m_assoc, int m_desig_type,
-                                int m_code_set)
+static int
+decode_dev_ids_quiet(unsigned char * buff, int len, int m_assoc,
+                     int m_desig_type, int m_code_set)
 {
-    int m, p_id, c_set, piv, assoc, desig_type, i_len;
-    int c_id, d_id, naa, vsi, off, u;
+    int m, p_id, c_set, piv, assoc, desig_type, i_len, is_sas;
+    int naa, off, u, rtp;
     const unsigned char * ucp;
     const unsigned char * ip;
+    unsigned char sas_tport_addr[8];
 
+    rtp = 0;
+    memset(sas_tport_addr, 0, sizeof(sas_tport_addr));
     off = -1;
     while ((u = sg_vpd_dev_id_iter(buff, len, &off, m_assoc, m_desig_type,
                                    m_code_set)) == 0) {
@@ -68,6 +71,7 @@ static int decode_dev_ids_quiet(unsigned char * buff, int len,
         p_id = ((ucp[0] >> 4) & 0xf);
         c_set = (ucp[0] & 0xf);
         piv = ((ucp[1] & 0x80) ? 1 : 0);
+        is_sas = (piv && (6 == p_id)) ? 1 : 0;
         assoc = ((ucp[1] >> 4) & 0x3);
         desig_type = (ucp[1] & 0xf);
         switch (desig_type) {
@@ -78,7 +82,7 @@ static int decode_dev_ids_quiet(unsigned char * buff, int len,
         case 2: /* EUI-64 based */
             if ((8 != i_len) && (12 != i_len) && (16 != i_len))
                 fprintf(stderr, "      << expect 8, 12 and 16 byte "
-                        "ids, got %d>>\n", i_len);
+                        "EUI, got %d>>\n", i_len);
             printf("0x");
             for (m = 0; m < i_len; ++m)
                 printf("%02x", (unsigned int)ip[m]);
@@ -86,44 +90,58 @@ static int decode_dev_ids_quiet(unsigned char * buff, int len,
             break;
         case 3: /* NAA */
             if (1 != c_set) {
-                fprintf(stderr, "      << expected binary code_set (1)>>\n");
+                fprintf(stderr, "      << unexpected code set %d for "
+                        "NAA>>\n", c_set);
                 dStrHex((const char *)ip, i_len, 0);
                 break;
             }
             naa = (ip[0] >> 4) & 0xff;
             if (! ((2 == naa) || (5 == naa) || (6 == naa))) {
-                fprintf(stderr, "      << expected naa [0x%x]>>\n", naa);
+                fprintf(stderr, "      << unexpected NAA [0x%x]>>\n", naa);
                 dStrHex((const char *)ip, i_len, 0);
                 break;
             }
             if (2 == naa) {
                 if (8 != i_len) {
-                    fprintf(stderr, "      << expected NAA 2 identifier "
+                    fprintf(stderr, "      << unexpected NAA 2 identifier "
                             "length: 0x%x>>\n", i_len);
                     dStrHex((const char *)ip, i_len, 0);
                     break;
                 }
-                d_id = (((ip[0] & 0xf) << 8) | ip[1]);
-                c_id = ((ip[2] << 16) | (ip[3] << 8) | ip[4]);
-                vsi = ((ip[5] << 16) | (ip[6] << 8) | ip[7]);
                 printf("0x");
                 for (m = 0; m < 8; ++m)
                     printf("%02x", (unsigned int)ip[m]);
                 printf("\n");
             } else if (5 == naa) {
                 if (8 != i_len) {
-                    fprintf(stderr, "      << expected NAA 5 identifier "
+                    fprintf(stderr, "      << unexpected NAA 5 identifier "
                             "length: 0x%x>>\n", i_len);
                     dStrHex((const char *)ip, i_len, 0);
                     break;
                 }
-                printf("0x");
-                for (m = 0; m < 8; ++m)
-                    printf("%02x", (unsigned int)ip[m]);
-                printf("\n");
+                if ((0 == is_sas) || (1 != assoc)) {
+                    printf("0x");
+                    for (m = 0; m < 8; ++m)
+                        printf("%02x", (unsigned int)ip[m]);
+                    printf("\n");
+                } else if (rtp) {
+                    printf("0x");
+                    for (m = 0; m < 8; ++m)
+                        printf("%02x", (unsigned int)ip[m]);
+                    printf(",0x%x\n", rtp);
+                    rtp = 0;
+                } else {
+                    if (sas_tport_addr[0]) {
+                        printf("0x");
+                        for (m = 0; m < 8; ++m)
+                            printf("%02x", (unsigned int)sas_tport_addr[m]);
+                        printf("\n");
+                    }
+                    memcpy(sas_tport_addr, ip, sizeof(sas_tport_addr));
+                }
             } else if (6 == naa) {
                 if (16 != i_len) {
-                    fprintf(stderr, "      << expected NAA 6 identifier "
+                    fprintf(stderr, "      << unexpected NAA 6 identifier "
                             "length: 0x%x>>\n", i_len);
                     dStrHex((const char *)ip, i_len, 0);
                     break;
@@ -135,6 +153,17 @@ static int decode_dev_ids_quiet(unsigned char * buff, int len,
             }
             break;
         case 4: /* Relative target port */
+            if ((0 == is_sas) || (1 != c_set) || (1 != assoc) || (4 != i_len))
+                break;
+            rtp = ((ip[2] << 8) | ip[3]);
+            if (sas_tport_addr[0]) {
+                printf("0x");
+                for (m = 0; m < 8; ++m)
+                    printf("%02x", (unsigned int)sas_tport_addr[m]);
+                printf(",0x%x\n", rtp);
+                memset(sas_tport_addr, 0, sizeof(sas_tport_addr));
+                rtp = 0;
+            }
             break;
         case 5: /* (primary) Target port group */
             break;
@@ -158,8 +187,14 @@ static int decode_dev_ids_quiet(unsigned char * buff, int len,
             break;
         }
     }
+    if (sas_tport_addr[0]) {
+        printf("0x");
+        for (m = 0; m < 8; ++m)
+            printf("%02x", (unsigned int)sas_tport_addr[m]);
+        printf("\n");
+    }
     if (-2 == u) {
-        fprintf(stderr, "VPD page error: short designator around "
+        fprintf(stderr, "VPD page error: short designator near "
                 "offset %d\n", off);
         return SG_LIB_CAT_MALFORMED;
     }
@@ -168,9 +203,10 @@ static int decode_dev_ids_quiet(unsigned char * buff, int len,
 
 /* Prints outs device identification designators selected by association,
    designator type and/or code set. */
-static int decode_dev_ids(const char * print_if_found, unsigned char * buff,
-                          int len, int m_assoc, int m_desig_type,
-                          int m_code_set, int long_out, int quiet)
+static int
+decode_dev_ids(const char * print_if_found, unsigned char * buff, int len,
+               int m_assoc, int m_desig_type, int m_code_set, int long_out,
+               int quiet)
 {
     int m, p_id, c_set, piv, assoc, desig_type, i_len;
     int ci_off, c_id, d_id, naa, vsi, printed, off, u;
@@ -223,7 +259,7 @@ static int decode_dev_ids(const char * print_if_found, unsigned char * buff,
             if (! long_out) {
                 if ((8 != i_len) && (12 != i_len) && (16 != i_len)) {
                     fprintf(stderr, "      << expect 8, 12 and 16 byte "
-                            "ids, got %d>>\n", i_len);
+                            "EUI, got %d>>\n", i_len);
                     dStrHex((const char *)ip, i_len, 0);
                     break;
                 }
@@ -274,19 +310,20 @@ static int decode_dev_ids(const char * print_if_found, unsigned char * buff,
             break;
         case 3: /* NAA */
             if (1 != c_set) {
-                fprintf(stderr, "      << expected binary code_set (1)>>\n");
+                fprintf(stderr, "      << unexpected code set %d for "
+                        "NAA>>\n", c_set);
                 dStrHex((const char *)ip, i_len, 0);
                 break;
             }
             naa = (ip[0] >> 4) & 0xff;
             if (! ((2 == naa) || (5 == naa) || (6 == naa))) {
-                fprintf(stderr, "      << expected naa [0x%x]>>\n", naa);
+                fprintf(stderr, "      << unexpected NAA [0x%x]>>\n", naa);
                 dStrHex((const char *)ip, i_len, 0);
                 break;
             }
             if (2 == naa) {
                 if (8 != i_len) {
-                    fprintf(stderr, "      << expected NAA 2 identifier "
+                    fprintf(stderr, "      << unexpected NAA 2 identifier "
                             "length: 0x%x>>\n", i_len);
                     dStrHex((const char *)ip, i_len, 0);
                     break;
@@ -310,7 +347,7 @@ static int decode_dev_ids(const char * print_if_found, unsigned char * buff,
                 printf("\n");
             } else if (5 == naa) {
                 if (8 != i_len) {
-                    fprintf(stderr, "      << expected NAA 5 identifier "
+                    fprintf(stderr, "      << unexpected NAA 5 identifier "
                             "length: 0x%x>>\n", i_len);
                     dStrHex((const char *)ip, i_len, 0);
                     break;
@@ -338,7 +375,7 @@ static int decode_dev_ids(const char * print_if_found, unsigned char * buff,
                 }
             } else if (6 == naa) {
                 if (16 != i_len) {
-                    fprintf(stderr, "      << expected NAA 6 identifier "
+                    fprintf(stderr, "      << unexpected NAA 6 identifier "
                             "length: 0x%x>>\n", i_len);
                     dStrHex((const char *)ip, i_len, 0);
                     break;
@@ -440,7 +477,8 @@ static int decode_dev_ids(const char * print_if_found, unsigned char * buff,
     return 0;
 }
 
-static int decode_mode_policy_vpd(unsigned char * buff, int len)
+static int
+decode_mode_policy_vpd(unsigned char * buff, int len)
 {
     int k, bump;
     unsigned char * ucp;
@@ -470,7 +508,8 @@ static int decode_mode_policy_vpd(unsigned char * buff, int len)
     return 0;
 }
 
-static int decode_man_net_vpd(unsigned char * buff, int len)
+static int
+decode_man_net_vpd(unsigned char * buff, int len)
 {
     int k, bump, na_len;
     unsigned char * ucp;
@@ -500,8 +539,87 @@ static int decode_man_net_vpd(unsigned char * buff, int len)
     return 0;
 }
 
-static int decode_scsi_ports_vpd(unsigned char * buff, int len,
-                                 int long_out, int quiet)
+static int
+decode_proto_lu_vpd(unsigned char * buff, int len)
+{
+    int k, bump, rel_port, desc_len, proto;
+    unsigned char * ucp;
+
+    if (len < 4) {
+        fprintf(stderr, "Protocol-specific logical unit information VPD "
+                "page length too short=%d\n", len);
+        return SG_LIB_CAT_MALFORMED;
+    }
+    len -= 4;
+    ucp = buff + 4;
+    for (k = 0; k < len; k += bump, ucp += bump) {
+        rel_port = (ucp[0] << 8) + ucp[1];
+        printf("Relative port=%d\n", rel_port);
+        proto = ucp[2] & 0xf;
+        desc_len = (ucp[6] << 8) + ucp[7];
+        bump = 8 + desc_len;
+        if ((k + bump) > len) {
+            fprintf(stderr, "Protocol-specific logical unit information VPD "
+                    "page, short descriptor length=%d, left=%d\n", bump,
+                    (len - k));
+            return SG_LIB_CAT_MALFORMED;
+        }
+        if (desc_len > 0) {
+            switch (proto) {
+            case TPROTO_SAS:
+                printf(" Protocol identifier: SAS\n");
+                printf(" TLR control supported: %d\n", !!(ucp[8] & 0x1));
+                break;
+            default:
+                fprintf(stderr, "Unexpected proto=%d\n", proto);
+                dStrHex((const char *)ucp, bump, 1);
+                break;
+            }
+        }
+    }
+    return 0;
+}
+
+static int
+decode_proto_port_vpd(unsigned char * buff, int len)
+{
+    int k, bump, rel_port, desc_len, proto;
+    unsigned char * ucp;
+
+    if (len < 4) {
+        fprintf(stderr, "Protocol-specific port information VPD "
+                "page length too short=%d\n", len);
+        return SG_LIB_CAT_MALFORMED;
+    }
+    len -= 4;
+    ucp = buff + 4;
+    for (k = 0; k < len; k += bump, ucp += bump) {
+        rel_port = (ucp[0] << 8) + ucp[1];
+        printf("Relative port=%d\n", rel_port);
+        proto = ucp[2] & 0xf;
+        desc_len = (ucp[6] << 8) + ucp[7];
+        bump = 8 + desc_len;
+        if ((k + bump) > len) {
+            fprintf(stderr, "Protocol-specific port information VPD "
+                    "page, short descriptor length=%d, left=%d\n", bump,
+                    (len - k));
+            return SG_LIB_CAT_MALFORMED;
+        }
+        if (desc_len > 0) {
+            switch (proto) {
+            case TPROTO_SAS:
+            default:
+                fprintf(stderr, "Unexpected proto=%d\n", proto);
+                dStrHex((const char *)ucp, bump, 1);
+                break;
+            }
+        }
+    }
+    return 0;
+}
+
+static int
+decode_scsi_ports_vpd(unsigned char * buff, int len, int long_out, int quiet)
 {
     int k, bump, rel_port, ip_tid_len, tpd_len, res;
     unsigned char * ucp;
@@ -550,7 +668,8 @@ static int decode_scsi_ports_vpd(unsigned char * buff, int len,
     return 0;
 }
 
-static int decode_ext_inq_vpd(unsigned char * buff, int len, int quiet)
+static int
+decode_ext_inq_vpd(unsigned char * buff, int len, int quiet)
 {
     if (len < 7) {
         fprintf(stderr, "Extended INQUIRY data VPD page length too "
@@ -644,7 +763,8 @@ static int decode_ata_info_vpd(unsigned char * buff, int len, int long_out,
     return 0;
 }
 
-static int decode_block_limits_vpd(unsigned char * buff, int len)
+static int
+decode_block_limits_vpd(unsigned char * buff, int len)
 {
     unsigned int u;
 
@@ -670,7 +790,30 @@ static int decode_block_limits_vpd(unsigned char * buff, int len)
     return 0;
 }
 
-static int decode_tape_dev_caps_vpd(unsigned char * buff, int len)
+static int
+decode_block_dev_chars_vpd(unsigned char * buff, int len)
+{
+    unsigned int u;
+
+    if (len < 64) {
+        fprintf(stderr, "Block device capabilities VPD page length too "
+                "short=%d\n", len);
+        return SG_LIB_CAT_MALFORMED;
+    }
+    u = (buff[4] << 8) | buff[5];
+    if (0 == u)
+        printf("  Medium rotation rate is not reported\n");
+    else if (1 == u)
+        printf("  Non-rotating medium (e.g. solid state)\n");
+    else if ((u < 0x401) || (0xffff == u))
+        printf("  Reserved [0x%x]\n", u);
+    else
+        printf("  Nominal rotation rate: %d rpm\n", u);
+    return 0;
+}
+
+static int
+decode_tape_dev_caps_vpd(unsigned char * buff, int len)
 {
     if (len < 6) {
         fprintf(stderr, "Sequential access device capabilities VPD page "
@@ -681,7 +824,21 @@ static int decode_tape_dev_caps_vpd(unsigned char * buff, int len)
     return 0;
 }
 
-static int decode_tapealert_supported_vpd(unsigned char * b, int len)
+static int
+decode_tape_man_ass_sn_vpd(unsigned char * buff, int len)
+{
+    if (len < 64) {
+        fprintf(stderr, "Manufacturer-assigned serial number VPD page "
+                "length too short=%d\n", len);
+        return SG_LIB_CAT_MALFORMED;
+    }
+    printf("  Manufacturer-assigned serial number: %.*s\n",
+                   len - 4, buff + 4);
+    return 0;
+}
+
+static int
+decode_tapealert_supported_vpd(unsigned char * b, int len)
 {
     if (len < 12) {
         fprintf(stderr, "TapeAlert supported flags length too short=%d\n",
@@ -724,17 +881,17 @@ static int decode_tapealert_supported_vpd(unsigned char * b, int len)
 }
 
 /* Returns 0 if successful, else error */
-int sdp_process_vpd_page(int sg_fd, int pn, int spn,
-                         const struct sdparm_opt_coll * opts,
-                         int req_pdt, int verbose)
+int
+sdp_process_vpd_page(int sg_fd, int pn, int spn,
+                     const struct sdparm_opt_coll * opts, int req_pdt)
 {
     int res, len, k, verb, dev_pdt, pdt;
     unsigned char b[VPD_ATA_INFO_RESP_LEN];
     int sz;
     unsigned char * up;
-    const struct sdparm_values_name_t * vnp;
+    const struct sdparm_vpd_page_t * vpp;
 
-    verb = (verbose > 0) ? verbose - 1 : 0;
+    verb = (opts->verbose > 0) ? opts->verbose - 1 : 0;
     sz = sizeof(b);
     memset(b, 0, sz);
     if (pn < 0) {
@@ -769,13 +926,13 @@ int sdp_process_vpd_page(int sg_fd, int pn, int spn,
         }
         if (len > 0) {
             for (k = 0; k < len; ++k) {
-                vnp = sdp_get_vpd_detail(b[4 + k], -1, pdt);
-                if (vnp) {
+                vpp = sdp_get_vpd_detail(b[4 + k], -1, pdt);
+                if (vpp) {
                     if (opts->long_out)
                         printf("  [0x%02x] %s [%s]\n", b[4 + k],
-                               vnp->name, vnp->acron);
+                               vpp->name, vpp->acron);
                     else
-                        printf("  %s [%s]\n", vnp->name, vnp->acron);
+                        printf("  %s [%s]\n", vpp->name, vpp->acron);
                 } else
                     printf("  0x%x\n", b[4 + k]);
             }
@@ -807,38 +964,6 @@ int sdp_process_vpd_page(int sg_fd, int pn, int spn,
         res = decode_ata_info_vpd(b, len + 4, opts->long_out, opts->hex);
         if (res)
             return res;
-        break;
-    case VPD_BLOCK_LIMITS:      /* same value as VPD_SA_DEV_CAP */
-        {
-            int tape;
-            const char * vpd_name;
-
-            tape = ((1 == pdt) || (8 == pdt)) ? 1 : 0;
-            vpd_name = tape ? "Sequential access device capabilities" :
-                              "Block limits";
-            if (b[1] != pn)
-                goto dumb_inq;
-            len = (b[2] << 8) + b[3];
-            if (len > sz) {
-                fprintf(stderr, "Response to %s VPD page truncated\n",
-                        vpd_name);
-                len = sz;
-            }
-            if (opts->long_out)
-                printf("%s [0xb0] VPD page:\n", vpd_name);
-            else
-                printf("%s VPD page:\n", vpd_name);
-            if (opts->hex) {
-                dStrHex((const char *)b, len + 4, 0);
-                return 0;
-            }
-            if (tape)
-                res = decode_tape_dev_caps_vpd(b, len + 4);
-            else
-                res = decode_block_limits_vpd(b, len + 4);
-            if (res)
-                return res;
-        }
         break;
     case VPD_DEVICE_ID:
         if (b[1] != pn)
@@ -939,6 +1064,50 @@ int sdp_process_vpd_page(int sg_fd, int pn, int spn,
         if (res)
             return res;
         break;
+    case VPD_PROTO_LU:
+        if (b[1] != pn)
+            goto dumb_inq;
+        len = (b[2] << 8) + b[3];
+        if (len > sz) {
+            fprintf(stderr, "Response to Protocol-specific logical unit "
+                    "information VPD page truncated\n");
+            len = sz;
+        }
+        if (opts->long_out)
+            printf("Protocol-specific logical unit information [0x90] VPD "
+                   "page:\n");
+        else
+            printf("Protocol-specific logical unit information VPD page:\n");
+        if (opts->hex) {
+            dStrHex((const char *)b, len + 4, 0);
+            return 0;
+        }
+        res = decode_proto_lu_vpd(b, len + 4);
+        if (res)
+            return res;
+        break;
+    case VPD_PROTO_PORT:
+        if (b[1] != pn)
+            goto dumb_inq;
+        len = (b[2] << 8) + b[3];
+        if (len > sz) {
+            fprintf(stderr, "Response to Protocol-specific port "
+                    "information VPD page truncated\n");
+            len = sz;
+        }
+        if (opts->long_out)
+            printf("Protocol-specific port information [0x91] VPD "
+                   "page:\n");
+        else
+            printf("Protocol-specific port information VPD page:\n");
+        if (opts->hex) {
+            dStrHex((const char *)b, len + 4, 0);
+            return 0;
+        }
+        res = decode_proto_port_vpd(b, len + 4);
+        if (res)
+            return res;
+        break;
     case VPD_SCSI_PORTS:
         if (b[1] != pn)
             goto dumb_inq;
@@ -985,22 +1154,6 @@ int sdp_process_vpd_page(int sg_fd, int pn, int spn,
             printf("\n");
         }
         break;
-    case VPD_TA_SUPPORTED:
-        if (b[1] != pn)
-            goto dumb_inq;
-        len = b[3];
-        if (opts->long_out)
-            printf("TapeAlert supported flags [0xb2] VPD page:\n");
-        else
-            printf("TapeAlert supported flags VPD page:\n");
-        if (opts->hex) {
-            dStrHex((const char *)b, len + 4, 0);
-            return 0;
-        }
-        res = decode_tapealert_supported_vpd(b, len + 4);
-        if (res)
-            return res;
-        break;
     case VPD_UNIT_SERIAL_NUM:
         if (b[1] != pn)
             goto dumb_inq;
@@ -1020,17 +1173,140 @@ int sdp_process_vpd_page(int sg_fd, int pn, int spn,
         } else
             printf("  <empty>\n");
         break;
+    case 0xb0:          /* VPD page depends on pdt */
+        {
+            int osd = 0;
+            int sbc = 0;
+            int ssc = 0;
+            const char * vpd_name;
+
+            switch (pdt)
+            {
+            case 0: case 4: case 7:
+                vpd_name = "Block limits";
+                sbc = 1;
+                break;
+            case 1: case 8:
+                vpd_name = "Sequential access device capabilities";
+                ssc = 1;
+                break;
+            case 0x11:
+                vpd_name = "OSD information";
+                osd = 1;
+                break;
+            default:
+                vpd_name = "unexpected pdt for B0h";
+                break;
+            }
+            if (b[1] != pn)
+                goto dumb_inq;
+            len = (b[2] << 8) + b[3];
+            if (len > sz) {
+                fprintf(stderr, "Response to %s VPD page truncated\n",
+                        vpd_name);
+                len = sz;
+            }
+            if (opts->long_out)
+                printf("%s [0xb0] VPD page:\n", vpd_name);
+            else
+                printf("%s VPD page:\n", vpd_name);
+            if (opts->hex) {
+                dStrHex((const char *)b, len + 4, 0);
+                return 0;
+            }
+            if (ssc)
+                res = decode_tape_dev_caps_vpd(b, len + 4);
+            else if (sbc)
+                res = decode_block_limits_vpd(b, len + 4);
+            else
+                dStrHex((const char *)b, len + 4, 0);
+            if (res)
+                return res;
+        }
+        break;
+    case 0xb1:          /* VPD page depends on pdt */
+        {
+            int adc = 0;
+            int osd = 0;
+            int sbc = 0;
+            int ssc = 0;
+            const char * vpd_name;
+
+            switch (pdt)
+            {
+            case 0: case 4: case 7:
+                vpd_name = "Block device characteristics";
+                sbc = 1;
+                break;
+            case 1: case 8:
+                vpd_name = "Manufactured assigned serial number";
+                ssc = 1;
+                break;
+            case 0x11:
+                vpd_name = "Security token";
+                osd = 1;
+                break;
+            case 0x12:
+                vpd_name = "Manufactured assigned serial number";
+                adc = 1;
+                break;
+            default:
+                vpd_name = "unexpected pdt for B1h";
+                break;
+            }
+            if (b[1] != pn)
+                goto dumb_inq;
+            len = (b[2] << 8) + b[3];
+            if (len > sz) {
+                fprintf(stderr, "Response to %s VPD page truncated\n",
+                        vpd_name);
+                len = sz;
+            }
+            if (opts->long_out)
+                printf("%s [0xb1] VPD page:\n", vpd_name);
+            else
+                printf("%s VPD page:\n", vpd_name);
+            if (opts->hex) {
+                dStrHex((const char *)b, len + 4, 0);
+                return 0;
+            }
+            if (ssc || adc)
+                res = decode_tape_man_ass_sn_vpd(b, len + 4);
+            else if (sbc)
+                res = decode_block_dev_chars_vpd(b, len + 4);
+            else
+                dStrHex((const char *)b, len + 4, 0);
+            if (res)
+                return res;
+        }
+        break;
+    case 0xb2:          /* VPD page depends on pdt, only VPD_TA_SUPPORTED */
+        if (b[1] != pn)
+            goto dumb_inq;
+        len = b[3];
+        if (opts->long_out)
+            printf("TapeAlert supported flags [0xb2] VPD page:\n");
+        else
+            printf("TapeAlert supported flags VPD page:\n");
+        if (opts->hex) {
+            dStrHex((const char *)b, len + 4, 0);
+            return 0;
+        }
+        res = decode_tapealert_supported_vpd(b, len + 4);
+        if (res)
+            return res;
+        break;
     default:
         if (b[1] != pn)
             goto dumb_inq;
         len = (b[2] << 8) + b[3] + 4;
-        vnp = sdp_get_vpd_detail(pn, -1, pdt);
-        if (vnp)
-            fprintf(stderr, "%s VPD page in hex:\n", vnp->name);
+        vpp = sdp_get_vpd_detail(pn, -1, pdt);
+        if (vpp)
+            fprintf(stderr, "%s VPD page in hex:\n", vpp->name);
         else
             fprintf(stderr, "VPD page 0x%x in hex:\n", pn);
         if (len > (int)sizeof(b)) {
-            if (verbose)
+            if (opts->verbose)
                 fprintf(stderr, "page length=%d too long, trim\n", len);
             len = sizeof(b);
         }

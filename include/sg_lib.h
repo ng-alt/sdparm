@@ -30,11 +30,13 @@
  *
  */
 
-/* Version 1.33 [20070331]
+/*
  *
  * On 5th October 2004 a FreeBSD license was added to this file.
  * The intention is to keep this file and the related sg_lib.c file
  * as open source and encourage their unencumbered use.
+ *
+ * Current version number is in the sg_lib.c file.
  */
 
 
@@ -84,6 +86,18 @@ extern "C" {
 #define SPC_SK_ABORTED_COMMAND 0xb
 #define SPC_SK_VOLUME_OVERFLOW 0xd
 #define SPC_SK_MISCOMPARE 0xe
+
+/* Transport protocol identifiers */
+#define TPROTO_FCP 0
+#define TPROTO_SPI 1
+#define TPROTO_SSA 2
+#define TPROTO_1394 3
+#define TPROTO_SRP 4
+#define TPROTO_ISCSI 5
+#define TPROTO_SAS 6
+#define TPROTO_ADT 7
+#define TPROTO_ATA 8
+#define TPROTO_NONE 0xf
 
 
 /* Returns length of SCSI command given the opcode (first byte). 
@@ -301,6 +315,12 @@ extern void dWordHex(const unsigned short* words, int num, int no_ascii,
    KB  *1,000;  m M MiB  *1,048,576; MB *1,000,000; g G GiB *1,073,741,824;
    GB *1,000,000,000 and <n>x<m> which multiplies <n> by <m> . */
 extern int sg_get_num(const char * buf);
+
+/* If the number in 'buf' can not be decoded then -1 is returned. Accepts a
+   hex prefix (0x or 0X) or a 'h' (or 'H') suffix; otherwise decimal is
+   assumed. Does not accept multipliers. Accept a comma (","), a whitespace
+   or newline as terminator.  */
+extern int sg_get_num_nomult(const char * buf);
 
 /* If the number in 'buf' can not be decoded or the multiplier is unknown
    then -1LL is returned. Accepts a hex prefix (0x or 0X) or a 'h' (or 'H')

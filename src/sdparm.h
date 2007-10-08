@@ -53,6 +53,7 @@
 #define MSP_SPI_RTC 4
 #define MSP_SAS_PCD 1
 #define MSP_SAS_SPC 2
+#define MSP_SAS2_PHY 3
 #define MSP_BACK_CTL 1
 #define MSP_SAT_PATA 0xf1       /* SAT PATA Control */
 #define MSP_DEV_CONF_EXT 1      /* device conf extension (ssc) */
@@ -60,7 +61,8 @@
 
 #define MODE_DATA_OVERHEAD 128
 #define EBUFF_SZ 256
-#define MAX_MP_IT_VAL 128
+#define MAX_MP_IT_VAL 128       /* maximum number of items that can be */
+                                /* changed in one invocation */
 #define MAX_MODE_DATA_LEN 2048
 
 /* VPD pages (fetched by INQUIRY command) */
@@ -75,9 +77,14 @@
 #define VPD_MODE_PG_POLICY 0x87
 #define VPD_SCSI_PORTS 0x88
 #define VPD_ATA_INFO 0x89
+#define VPD_PROTO_LU 0x90
+#define VPD_PROTO_PORT 0x91
 #define VPD_BLOCK_LIMITS 0xb0   /* SBC-3 */
 #define VPD_SA_DEV_CAP 0xb0     /* SSC-3 */
-#define VPD_MAN_ASS_SN 0xb1     /* SSC-3 */
+#define VPD_OSD_INFO 0xb0       /* OSD */
+#define VPD_BLOCK_DEV_CHARS 0xb1 /* SBC-3 */
+#define VPD_MAN_ASS_SN 0xb1     /* SSC-3, ADC-2 */
+#define VPD_SECURITY_TOKEN 0xb1 /* OSD */
 #define VPD_TA_SUPPORTED 0xb2   /* SSC-3 */
 
 #define VPD_ASSOC_LU 0
@@ -90,17 +97,7 @@
 #define VPD_DI_SEL_TARGET 4
 #define VPD_DI_SEL_AS_IS 32
 
-/* Transport protocol identifiers */
-#define TP_FCP 0
-#define TP_SPI 1
-#define TP_SSA 2
-#define TP_1394 3
-#define TP_SRP 4
-#define TP_ISCSI 5
-#define TP_SAS 6
-#define TP_ADT 7
-#define TP_ATA 8
-#define TP_NONE 0xf
+#define DEF_TRANSPORT_PROTOCOL TPROTO_SAS
 
 /* Vendor identifiers */
 #define VENDOR_SEAGATE 0x0
@@ -111,6 +108,7 @@
 /* bit flag settings for sdparm_mode_page_item::flags */
 #define MF_COMMON 0x1   /* output in summary mode */
 #define MF_HEX 0x2
+#define MF_CLASH_OK 0x4 /* know this overlaps safely with generic */
 
 /* enumerations for commands */
 #define CMD_READY 1
@@ -135,18 +133,56 @@ struct sdparm_opt_coll {
     int inquiry;
     int long_out;
     int mode_6;
+    int num_desc;
     int quiet;
     int save;
     int transport;
     int vendor;
+    int verbose;
 };
 
-struct sdparm_values_name_t {
-    int value;
+struct sdparm_mode_descriptor_t {
+    int num_descs_off;
+    int num_descs_bytes;
+    int num_descs_inc;    /* number to add to num_descs derived from */
+                          /* first 2 entries */
+    int first_desc_off;
+    int desc_len;         /* -1 for unknown otherwise fixed per desc */
+    int desc_len_off;     /* if (-1 == desc_len) then this is offset */
+    int desc_len_bytes;   /* ... after start of descriptor */
+    /* Hence: <desc_len> = *(d_len_off + base) + d_len_off + d_len_bytes */
+    const char * name;
+};
+
+struct sdparm_mode_page_t {
+    int page;
+    int subpage;
+    int pdt;         /* peripheral device type id, -1 is the default */
+                     /* (not applicable) value */
+    int ro;          /* read-only */
+    const char * acron;
+    const char * name;
+    const struct sdparm_mode_descriptor_t * mp_desc;
+                    /* non-NULL when mpage has descriptor format */
+};
+
+struct sdparm_transport_id_t {
+    int proto_num;
+    const char * acron;
+    const char * name;
+};
+
+struct sdparm_vpd_page_t {
+    int vpd_num;
     int subvalue;
     int pdt;         /* peripheral device type id, -1 is the default */
                      /* (not applicable) value */
-    int ro_vendor;   /* read-only or vendor flag */
+    const char * acron;
+    const char * name;
+};
+
+struct sdparm_vendor_name_t {
+    int vendor_num;
     const char * acron;
     const char * name;
 };
@@ -169,6 +205,7 @@ struct sdparm_mode_page_it_val {
     struct sdparm_mode_page_item mpi;
     long long val;
     long long orig_val;
+    int descriptor_num;
 };
 
 struct sdparm_mode_page_settings {
@@ -179,12 +216,12 @@ struct sdparm_mode_page_settings {
 };
 
 struct sdparm_transport_pair {
-    struct sdparm_values_name_t * mpage;
+    struct sdparm_mode_page_t * mpage;
     struct sdparm_mode_page_item * mitem;
 };
 
 struct sdparm_vendor_pair {
-    struct sdparm_values_name_t * mpage;
+    struct sdparm_mode_page_t * mpage;
     struct sdparm_mode_page_item * mitem;
 };
 
@@ -193,11 +230,11 @@ struct sdparm_command {
     const char * name;
 };
 
-extern struct sdparm_values_name_t sdparm_gen_mode_pg[];
-extern struct sdparm_values_name_t sdparm_vpd_pg[];
-extern struct sdparm_values_name_t sdparm_transport_id[];
+extern struct sdparm_mode_page_t sdparm_gen_mode_pg[];
+extern struct sdparm_vpd_page_t sdparm_vpd_pg[];
+extern struct sdparm_transport_id_t sdparm_transport_id[];
 extern struct sdparm_transport_pair sdparm_transport_mp[];
-extern struct sdparm_values_name_t sdparm_vendor_id[];
+extern struct sdparm_vendor_name_t sdparm_vendor_id[];
 extern struct sdparm_vendor_pair sdparm_vendor_mp[];
 extern int sdparm_vendor_mp_len;
 extern struct sdparm_mode_page_item sdparm_mitem_arr[];
@@ -218,23 +255,24 @@ extern const char * sdparm_mode_page_policy_arr[];
  */
 
 extern int sdp_get_mp_len(unsigned char * mp);
-extern const struct sdparm_values_name_t * sdp_get_mode_detail(
+extern const struct sdparm_mode_page_t * sdp_get_mode_detail(
                 int page_num, int subpage_num, int pdt, int transp_proto,
                 int vendor_num);
-extern void sdp_get_mpage_name(int page_num, int subpage_num, int pdt,
-                int transp_proto, int vendor_num, int plus_acron, int hex,
-                char * bp, int max_b_len);
-extern const struct sdparm_values_name_t * sdp_find_mp_by_acron(
+extern const struct sdparm_mode_page_t * sdp_get_mpage_name(
+                int page_num, int subpage_num, int pdt, int transp_proto,
+                int vendor_num, int plus_acron, int hex, char * bp,
+                int max_b_len);
+extern const struct sdparm_mode_page_t * sdp_find_mp_by_acron(
                 const char * ap, int transp_proto, int vendor_num);
-const struct sdparm_values_name_t *
+const struct sdparm_vpd_page_t *
         sdp_get_vpd_detail(int page_num, int subvalue, int pdt);
-extern const struct sdparm_values_name_t * sdp_find_vpd_by_acron(
+extern const struct sdparm_vpd_page_t * sdp_find_vpd_by_acron(
                 const char * ap);
 extern const char * sdp_get_transport_name(int proto_num);
-extern const struct sdparm_values_name_t * sdp_find_transport_by_acron(
+extern const struct sdparm_transport_id_t * sdp_find_transport_by_acron(
                 const char * ap);
 extern const char * sdp_get_vendor_name(int vendor_num);
-extern const struct sdparm_values_name_t * sdp_find_vendor_by_acron(
+extern const struct sdparm_vendor_name_t * sdp_find_vendor_by_acron(
                 const char * ap);
 extern const struct sdparm_vendor_pair * sdp_get_vendor_pair(int vendor_num);
 extern const struct sdparm_mode_page_item * sdp_find_mitem_by_acron(
@@ -251,7 +289,7 @@ extern unsigned long long sdp_mp_get_value_check(
                 const struct sdparm_mode_page_item *mpi,
                 const unsigned char * mp, int * all_set);
 extern void sdp_mp_set_value(unsigned long long val,
-                struct sdparm_mode_page_item *mpi, unsigned char * mp);
+                const struct sdparm_mode_page_item *mpi, unsigned char * mp);
 extern char * sdp_get_ansi_version_str(int version, int buff_len,
                 char * buff);
 extern char * sdp_get_pdt_doc_str(int version, int buff_len,
@@ -263,7 +301,7 @@ extern char * sdp_get_pdt_doc_str(int version, int buff_len,
 
 extern int sdp_process_vpd_page(int sg_fd, int pn, int spn,
                                 const struct sdparm_opt_coll * opts,
-                                int req_pdt, int verbose);
+                                int req_pdt);
 
 /*
  * Declarations for functions found in sdparm_cmd.c
@@ -273,8 +311,7 @@ extern const struct sdparm_command * sdp_build_cmd(const char * cmd_str,
                 int * rwp);
 extern void sdp_enumerate_commands();
 extern int sdp_process_cmd(int sg_fd, const struct sdparm_command * scmdp,
-                int pdt, const struct sdparm_opt_coll * opts,
-                int verbose);
+                int pdt, const struct sdparm_opt_coll * opts);
 
 /*
  * Declarations for functions that are port dependant
